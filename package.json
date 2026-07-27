@@ -1,0 +1,21 @@
+{
+  "name": "bixi-forecaster",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "ML run-out forecaster for BIXI station 345, raced side-by-side against bixi-predictor's Gaussian model. Cloudflare Workers + D1; LightGBM trained offline, evaluated in TypeScript.",
+  "scripts": {
+    "dev": "wrangler dev --port 8789 --test-scheduled",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc",
+    "parity": "node --experimental-strip-types scripts/parity.ts",
+    "upload-artifact": "node --experimental-strip-types scripts/upload-artifact.ts",
+    "db:migrate:local": "wrangler d1 migrations apply bixi_forecaster --local",
+    "db:migrate": "wrangler d1 migrations apply bixi_forecaster --remote"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260708.0",
+    "typescript": "^5.6.0",
+    "wrangler": "^4.0.0"
+  }
+}

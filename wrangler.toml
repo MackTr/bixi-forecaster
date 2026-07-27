@@ -1,0 +1,46 @@
+name = "bixi-forecaster"
+main = "src/worker.ts"
+compatibility_date = "2025-01-01"
+
+# 10pm America/Toronto is 02:00 UTC during EDT and 03:00 UTC during EST. Both
+# crons fire year-round; scheduled() runs the pipeline only when the local hour
+# is 22, so exactly one firing does work each night (DST-proof). The :05 offset
+# puts this run five minutes AFTER bixi-predictor's, so its prediction for the
+# same target date already exists when the mirror step fetches it.
+[triggers]
+crons = ["5 2 * * *", "5 3 * * *"]
+
+# D1 (SQLite). For local dev wrangler uses a local copy and ignores database_id.
+# Before `wrangler deploy`: run `wrangler d1 create bixi_forecaster` and paste
+# the real database_id below.
+[[d1_databases]]
+binding = "DB"
+database_name = "bixi_forecaster"
+database_id = "PLACEHOLDER_RUN_WRANGLER_D1_CREATE"
+
+# Client #3 of bixi-monitor's public API — it never touches the monitor's D1.
+# workers.dev blocks worker→worker fetches within one account (error 1042
+# dressed as a 404), so production routes through this service binding; the
+# request still hits the monitor's public /api/v1 handler, so the contract stays
+# the boundary. Local dev falls back to the public MONITOR_API URL.
+[[services]]
+binding = "MONITOR"
+service = "bixi-monitor"
+
+# The control arm. bixi-predictor is reached over HTTP exactly like any other
+# client — its model code is NOT vendored, so the `gaussian` variant is the real
+# deployed model rather than a copy that could silently drift from it.
+[[services]]
+binding = "PREDICTOR"
+service = "bixi-predictor"
+
+# Secrets (not listed here): ADMIN_TOKEN — set with `wrangler secret put`, or
+# .dev.vars locally. No VAPID keys: push notifications stay in bixi-predictor,
+# because two workers notifying the same subscriptions would confound the A/B.
+[vars]
+MONITOR_API = "https://bixi-monitor.bixi.workers.dev/api/v1"
+PREDICTOR_API = "https://bixi-predictor.bixi.workers.dev/api/v1"
+STATION_ID = "345"
+STATION_LAT = "45.46734390596128"
+STATION_LON = "-73.57078850269318"
+STATION_CAPACITY = "19"

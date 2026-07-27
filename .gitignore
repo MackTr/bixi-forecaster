@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.wrangler/
+.dev.vars
+*.log
+.DS_Store
+
+# training artifacts + downloaded open data (GB-scale, rebuildable)
+training/.venv/
+training/data/
+training/out/
+__pycache__/
+*.pyc
