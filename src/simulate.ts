@@ -122,6 +122,7 @@ export function simulate(input: SimInput): SimResult {
       const arr = poisson(rand, Math.max(0, input.lambdaArr[h] ?? 0) / 4);
       bikes = Math.min(cap, bikes + arr);
       const want = poisson(rand, Math.max(0, input.lambdaDep[h] ?? 0) / 4);
+      const stock = bikes; // before departures — needed to place the run-out inside the step
       const took = Math.min(want, bikes);
       bikes -= took;
 
@@ -134,7 +135,13 @@ export function simulate(input: SimInput): SimResult {
         // Interpolate within the step instead of snapping to its boundary: at
         // 15-minute granularity, always reporting the end of the bucket would
         // add a systematic ~7 minute late bias to every prediction.
-        const frac = took > 0 ? Math.min(1, (took - bikes) / took) : 1;
+        //
+        // The fraction is stock/want, not anything involving `took`. `took` is
+        // Math.min(want, stock), so once the rack empties it EQUALS stock and any
+        // ratio of the two collapses to 1 — which silently reinstated exactly the
+        // end-of-bucket bias this interpolation exists to remove. Spreading `want`
+        // uniformly across the step, the rack hits zero after stock/want of it.
+        const frac = want > 0 ? Math.min(1, stock / want) : 1;
         ranOut = minutes + STEP_MIN * frac;
       }
       sumBikes[s + 1] += bikes;

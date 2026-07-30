@@ -1,0 +1,16 @@
+{
+  // scripts/ runs under Node; src/ runs in a Worker. The ROOT config checks src/
+  // against Workers types alone, so a stray `process.env` or `Buffer` in a Worker
+  // file still fails there. This config only adds Node's globals for the scripts
+  // themselves -- it keeps the Workers types too, because parity.ts imports the
+  // real src/ modules and those legitimately reference D1 and crypto.subtle.
+  //
+  // Module settings are inherited (Bundler resolution), because src/ imports are
+  // extensionless and NodeNext would reject every one of them. Node's own
+  // resolution is handled at runtime by ./ts-ext.mjs instead.
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "types": ["node", "@cloudflare/workers-types"]
+  },
+  "include": ["."]
+}

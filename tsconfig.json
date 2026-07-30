@@ -12,5 +12,5 @@
     "esModuleInterop": true,
     "allowImportingTsExtensions": true
   },
-  "include": ["src", "scripts"]
+  "include": ["src"]
 }
