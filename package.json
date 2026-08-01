@@ -9,7 +9,7 @@
     "deploy": "wrangler deploy",
     "typecheck": "tsc && tsc -p scripts",
     "parity": "node --import ./scripts/ts-ext.mjs scripts/parity.ts",
-    "upload-artifact": "node --experimental-strip-types scripts/upload-artifact.ts",
+    "upload-artifact": "node --import ./scripts/ts-ext.mjs scripts/upload-artifact.ts",
     "db:migrate:local": "wrangler d1 migrations apply bixi_forecaster --local",
     "db:migrate": "wrangler d1 migrations apply bixi_forecaster --remote"
   },

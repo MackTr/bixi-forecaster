@@ -11,12 +11,15 @@ compatibility_date = "2025-01-01"
 crons = ["5 2 * * *", "5 3 * * *"]
 
 # D1 (SQLite). For local dev wrangler uses a local copy and ignores database_id.
-# Before `wrangler deploy`: run `wrangler d1 create bixi_forecaster` and paste
-# the real database_id below.
+#
+# NOTE: `wrangler d1 create` suggests `binding = "bixi_forecaster"`. Ignore that
+# half of its snippet — the binding name is what src/worker.ts declares (`DB`),
+# and renaming it here would make env.DB undefined at runtime rather than fail
+# at deploy. Only database_id comes from the create output.
 [[d1_databases]]
 binding = "DB"
 database_name = "bixi_forecaster"
-database_id = "PLACEHOLDER_RUN_WRANGLER_D1_CREATE"
+database_id = "6cfb74b3-3444-4963-94af-928016fbc4bc"
 
 # Client #3 of bixi-monitor's public API — it never touches the monitor's D1.
 # workers.dev blocks worker→worker fetches within one account (error 1042
