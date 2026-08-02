@@ -16,7 +16,7 @@ import { addDays, localToday } from "./tz";
 import { datesNeedingSync, syncDays } from "./sync";
 import { datesNeedingActuals, fetchActualsFor, fetchForecastFor, freezeForecast, upsertActuals } from "./weather";
 import { buildRebalanceProfile } from "./rebalance";
-import { predictMl, predictGlm } from "./demand";
+import { predictMl } from "./demand";
 import { mirrorGaussian, predictBlend, type VariantOutcome } from "./compare";
 
 export interface PipelineResult {
@@ -74,7 +74,7 @@ export async function runNightly(env: Env, opts: { now?: number }): Promise<Pipe
     forecastFrozen: 0,
     rebalanceCells: 0,
     finalized: [],
-    variants: { ml: null, glm: null, gaussian: null, blend: null },
+    variants: { ml: null, gaussian: null, blend: null },
     errors: [],
   };
   const step = async (name: string, fn: () => Promise<void>) => {
@@ -107,15 +107,18 @@ export async function runNightly(env: Env, opts: { now?: number }): Promise<Pipe
     result.finalized = await finalizePastPredictions(env, today, now);
   });
 
-  // The four arms. Each is its own step: a failure in one must not deny the
+  // The three arms. Each is its own step: a failure in one must not deny the
   // others a row, or the paired comparison silently loses that night for
   // everybody — which biases the scoreboard toward whichever model fails least
   // often rather than whichever predicts best.
+  //
+  // `glm` was a fourth arm answering "is boosting earning its complexity?" — a
+  // question about this implementation rather than about which model predicts
+  // better, and src/glm.ts was never written, so the step failed every night.
+  // Dropped from the race. It costs nothing to add back: the frozen f_* weather
+  // columns mean a built glm can be backfilled into past nights by replay.
   await step("predict-ml", async () => {
     result.variants.ml = await predictMl(env, targetDate, now);
-  });
-  await step("predict-glm", async () => {
-    result.variants.glm = await predictGlm(env, targetDate, now);
   });
   await step("mirror-gaussian", async () => {
     result.variants.gaussian = await mirrorGaussian(env, targetDate, now);

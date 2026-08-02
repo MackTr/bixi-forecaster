@@ -10,7 +10,7 @@ Three repos, three jobs:
 |---|---|
 | `bixi-monitor` | facts — GBFS observations, and the dashboard |
 | `bixi-predictor` | beliefs — a similarity-weighted Gaussian model over ~30 days of the station's own history |
-| **`bixi-forecaster`** | a second engine with different failure modes, plus the scoreboard that grades both |
+| **`bixi-forecaster`** | a second engine with different failure modes, a blend of the two, and the scoreboard that grades all three |
 
 `bixi-monitor` and `bixi-predictor` are **not modified** by this project.
 `src/model.ts` is deliberately not vendored — the control arm is reached over
@@ -21,12 +21,12 @@ HTTP, so it is the real deployed model rather than a copy that could drift.
 Shadow mode has **not started**. The service has never been deployed; all work so
 far runs against local miniflare D1.
 
-- [x] Worker skeleton, hourly facts, frozen weather, four-variant schema
+- [x] Worker skeleton, hourly facts, frozen weather, variant-keyed schema
 - [x] `training/` — DuckDB panel, LightGBM, time-blocked CV, learning curve
 - [x] `export.py` + `gbdt.ts` + parity gate — **passing at 5.6e-17**
 - [x] Artifact upload/activation with a verified SHA chain
+- [x] Three arms settled: `gaussian`, `ml`, `blend` — the `glm` arm was cut
 - [ ] Deploy + first live nightly run
-- [ ] `glm.ts` — the fourth arm
 - [ ] 3–4 weeks of shadow mode, then read `/api/v1/compare`
 
 ## Why it works this way
@@ -84,14 +84,20 @@ mirror step fetches it.
 
 ```
 sync-hourly → weather-actuals → weather-forecast (frozen) → rebalance-profile
-→ finalize (all variants) → predict-ml → predict-glm → mirror-gaussian → predict-blend
+→ finalize (all variants) → predict-ml → mirror-gaussian → predict-blend
 ```
 
 Every step is individually try/caught. A monitor outage at 10pm still yields
 predictions from existing facts, and a missed night self-heals on the next one via
-the 14-day sync lookback. Crucially, each of the four arms is its own step: a
+the 14-day sync lookback. Crucially, each of the three arms is its own step: a
 failure in one must not deny the others a row, or the scoreboard silently biases
 toward whichever model *fails* least rather than whichever *predicts* best.
+
+`predict-blend` runs last because the gate reads the two rows above it. It
+weights them by the Gaussian's own published confidence, averages their times,
+and takes its window from the **mixture** of the two beliefs rather than from the
+average of their endpoints — which would produce an interval containing neither.
+See [docs/model.md](docs/model.md#how-the-blend-composes-what-it-weights).
 
 **Write volume is the one real regression from `bixi-predictor`.** Hourly
 granularity means ~336 `hourly_facts` + ~350 `weather_hourly` rows per night versus
@@ -104,11 +110,12 @@ per-row `await .run()` loop will not survive the free-tier budget.
 GET  /api/v1/health
 GET  /api/v1/compare?days=            the scoreboard — paired MAE, coverage, Brier, sign test
 GET  /api/v1/stations/345/prediction  ?variant=&date=&curve=1
-GET  /api/v1/stations/345/predictions ?days=&all=1   all four variants side by side
+GET  /api/v1/stations/345/predictions ?days=&all=1   all three variants side by side
 
 POST /api/v1/admin/backfill?days=&force=1            (Bearer ADMIN_TOKEN)
 POST /api/v1/admin/run
-POST /api/v1/admin/replay?date=                      recompute from frozen f_* with the same seed
+POST /api/v1/admin/replay?date=[&force=1]            recompute ml + blend from frozen f_*, same seed
+                                                     409s on an already-finalized night unless forced
 GET  /api/v1/admin/model
 POST /api/v1/admin/model/{upload,parity-passed,activate}?version=
 ```
@@ -128,7 +135,17 @@ npm run db:migrate:local
 npm run dev                # wrangler dev on :8789, --test-scheduled
 npm run typecheck          # tsc for src/ (Workers types) and scripts/ (+ Node)
 npm run parity             # the gate
+npm run scoreboard         # read the race — defaults to production
 ```
+
+`npm run scoreboard` is the intended way to read the experiment. It prints every
+arm's MAE, signed bias, window coverage and Brier, then checks the four
+pre-registered criteria in [docs/model.md](docs/model.md#the-decision-rule) one
+by one and says plainly whether a challenger has beaten the control. It computes
+no skill numbers of its own — all of them come from `/api/v1/compare`, so there
+is only ever one definition of an error — and it refuses to declare a winner on
+an MAE gap the sample cannot resolve. `--days`, `--base` and `--json` are the
+only flags.
 
 Retraining is offline and documented in [training/README.md](training/README.md).
 To ship a new artifact:

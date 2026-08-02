@@ -10,7 +10,7 @@ import type { Env } from "./worker";
 import { addDays, localToday, minsToHHMM } from "./tz";
 import { backfill, runNightly } from "./pipeline";
 import { activateArtifact, loadActiveArtifact, markParityPassed, storeArtifact } from "./artifact";
-import { scoreboard, type Variant } from "./compare";
+import { predictBlend, scoreboard, type Variant } from "./compare";
 import { predictMl } from "./demand";
 
 const CORS: Record<string, string> = {
@@ -201,6 +201,21 @@ async function predictionHistory(env: Env, url: URL): Promise<Response> {
 async function replay(env: Env, url: URL): Promise<Response> {
   const date = url.searchParams.get("date");
   if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return fail(400, "expected ?date=YYYY-MM-DD");
+
+  // Refuse to rewrite a night that has already been scored. storePrediction
+  // cannot touch actual_/error_/finalized_, so a replay here would leave a NEW
+  // predicted_minutes sitting beside the OLD error_minutes — and, worse, would
+  // silently move a datum the A/B has already counted. Determinism checks
+  // belong on nights the scoreboard has not read yet; ?force=1 exists for
+  // deliberate repairs, which are then visible as a created_ts later than the
+  // finalization.
+  const graded = await env.DB.prepare(`SELECT COUNT(*) AS n FROM predictions WHERE target_date = ? AND finalized_ts IS NOT NULL`)
+    .bind(date)
+    .first<{ n: number }>();
+  if ((graded?.n ?? 0) > 0 && url.searchParams.get("force") !== "1") {
+    return fail(409, `${date} is already finalized — replaying it would rewrite a graded night (pass &force=1 to override)`);
+  }
+
   const before = await env.DB.prepare(
     `SELECT predicted_minutes, probability, window_early, window_late FROM predictions WHERE target_date = ? AND variant = 'ml'`,
   )
@@ -208,10 +223,17 @@ async function replay(env: Env, url: URL): Promise<Response> {
     .first<{ predicted_minutes: number | null; probability: number | null; window_early: number | null; window_late: number | null }>();
   const now = Math.floor(Date.now() / 1000);
   const after = await predictMl(env, date, now);
+  // The blend is derived from the rows in the table, so it has to be recomputed
+  // after ml or it would still reflect the previous run's inputs — and, when the
+  // gate itself has changed, the previous run's RULE. Without this, no past
+  // night's blend could ever be reproduced, which would leave the arm the
+  // service publishes by default as the one arm replay could not verify.
+  const blend = await predictBlend(env, date, now);
   return json({
     targetDate: date,
     stored: before ?? null,
     replayed: after,
+    blend,
     // A mismatch means something non-deterministic leaked into the path — a
     // changed artifact, a rewritten forecast, or a clock-seeded draw.
     identical:

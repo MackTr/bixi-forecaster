@@ -241,4 +241,10 @@ async function predictVariant(
 }
 
 export const predictMl = (env: Env, targetDate: string, now: number) => predictVariant(env, targetDate, now, "gbdt", "ml");
+
+// NOT wired into the nightly pipeline — the shadow window races three arms, and
+// src/glm.ts was never written, so this throws `artifact ... has no glm block`.
+// Kept because the plumbing it needs (scorerFor, predictLinear, the artifact's
+// optional glm block) is already here and correct: building glm.ts and adding
+// one pipeline step is all that reviving the fourth arm would take.
 export const predictGlm = (env: Env, targetDate: string, now: number) => predictVariant(env, targetDate, now, "glm", "glm");

@@ -118,12 +118,16 @@ CREATE TABLE rebalance_profile (
   PRIMARY KEY (dow, hour)
 );
 
--- One row per (target day, model variant). Four variants race:
+-- One row per (target day, model variant). Three variants race:
 --   gaussian  mirrored over HTTP from bixi-predictor — the control
 --   ml        GBDT demand + Monte Carlo — the challenger
 --   blend     rule-based gate on the Gaussian's own published confidence
---   glm       ~40-coefficient Poisson GLM through the same stage 2 —
---             the "is gradient boosting earning its complexity" arm
+--
+-- 'glm' stays PERMITTED by the constraint below but is not raced: that arm was
+-- cut before the first graded night (docs/model.md). Leaving the value legal is
+-- what lets a future glm be backfilled into past nights by replay without a
+-- second migration. The DDL is unchanged from what was applied — only this
+-- comment was corrected.
 --
 -- start_bikes is stored per row for an A/B FAIRNESS AUDIT: every variant must
 -- have been seeded with the same 10pm inventory. If two variants ever disagree

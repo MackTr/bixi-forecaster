@@ -150,24 +150,59 @@ API has no `precipitation_probability`. Three mitigations, in order:
 
 ### The comparison
 
-Four variants are written every night, keyed `(target_date, variant)`:
+Three variants are written every night, keyed `(target_date, variant)`:
 
 | variant | source | role |
 |---|---|---|
 | `gaussian` | mirrored over HTTP from `bixi-predictor` | the control |
 | `ml` | GBDT demand + Monte Carlo | the challenger |
 | `blend` | frozen rule-based gate | the likely winner |
-| `glm` | Poisson GLM, same stage 2 | is boosting earning its complexity? |
 
-`GET /api/v1/compare?days=` grades all four with one piece of code against one
+`GET /api/v1/compare?days=` grades all three with one piece of code against one
 definition of the actual, on **paired nights only** — nights where both arms
 produced a number. An unpaired MAE lets a model look good by abstaining on hard
 nights.
+
+A fourth arm, `glm` (Poisson GLM through the same stage 2), was specified and
+then **cut before the first graded night**. It asked "is boosting earning its
+complexity?" — a question about this implementation rather than about which
+model predicts better — and `src/glm.ts` was never written, so it failed
+nightly. The variant value survives in the schema and in `Variant`: if it is
+ever built, the frozen `f_*` weather columns let it be backfilled into past
+nights by replay, and it can be scored then without disturbing this window.
 
 The blend rule is **frozen, not fitted**. With ~40 paired nights a tuned weight
 evaluated on those same nights is overfitting. It gates on the Gaussian model's
 own published confidence (`fallbackLevel`, `effectiveN`) and records its weights
 in `basis_json` nightly, so the rule can be revisited later on data it did not see.
+
+#### How the blend composes what it weights
+
+The gate says how much to trust each arm; composing them is a second decision,
+and the two published quantities take different answers.
+
+The **time** is a weighted mean, because averaging point forecasts cancels
+independent error. The **window** is the 25th and 75th percentile of the
+*mixture* of the two arms' beliefs — each reconstructed as a piecewise-linear
+CDF through its published `(p25, median, p75)`, weighted by the gate.
+
+Averaging the window endpoints instead — the rule as first written — produces an
+interval containing neither arm when they disagree (Gaussian 8:00–8:40 and ML
+10:30–11:30 at .7/.3 average to 8:45–9:31), so the blend would have been
+punished on window coverage precisely on the nights blending does work. The
+mixture publishes 8:09–10:20 there, and collapses back to exactly 8:00–8:40 when
+the arms agree. No new parameter is introduced, so the rule stays frozen.
+
+`basis_json` also records **`mixtureMedian`**, the point estimate the mixture
+would have given. Where the arms are far apart the weighted mean lands between
+two modes at a time neither model believes, while the mixture median sits inside
+whichever arm holds the majority of the weight. Which is better for MAE is an
+empirical question ~40 nights cannot settle, so it is stored nightly and graded
+by nobody — evaluable later on data it did not see, the same discipline as the
+gate itself.
+
+**Both of these were fixed before the first graded night**, which is the only
+time such a change is free. Nothing had been deployed and nothing scored.
 
 ### The detectable effect
 
@@ -295,10 +330,9 @@ otherwise train, validate, export, and serve a commute peak that is wrong foreve
 
 ## Known gaps
 
-- **The `glm` arm is not built.** `src/glm.ts` does not exist and the artifact has
-  no `glm` block, so `predict-glm` fails nightly with `artifact … has no glm
-  block`. Step isolation keeps the other three arms alive. Not urgent: frozen `f_*`
-  columns mean this arm can be backfilled by replay once it exists.
+- **The `glm` arm was cut**, not built — see [The comparison](#the-comparison).
+  `predictGlm()` and the artifact's optional `glm` block are still in the tree and
+  still correct; only `src/glm.ts` and a pipeline step are missing.
 - **Stage 2 is the least validated part.** No inventory exists for 2024–25, only
   the monitor's own weeks. Until it is backtested against those, composition error
   is unquantified — and if it is not clearly under ~56 min MAE, the `ml` arm loses

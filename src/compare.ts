@@ -10,6 +10,10 @@ import type { Env } from "./worker";
 import { addDays, minsToHHMM } from "./tz";
 import { fetchGaussianPrediction, hhmmToMinutes } from "./monitor";
 
+// `glm` is no longer raced (see docs/model.md — the shadow window runs three
+// arms). The value stays in the union and in the schema's CHECK constraint so
+// that if it is ever built, `POST /admin/replay` can write its rows into past
+// nights from the frozen f_* columns without a migration.
 export type Variant = "gaussian" | "ml" | "blend" | "glm";
 
 export interface VariantOutcome {
@@ -103,6 +107,89 @@ export async function mirrorGaussian(env: Env, targetDate: string, now: number):
 // ---------------------------------------------------------------------------
 const GATE_EFFECTIVE_N = 4;
 
+// ---------------------------------------------------------------------------
+// Composing two beliefs.
+//
+// The weights above say how much to trust each arm. They do NOT say how to
+// combine what the arms published, and the two questions have different
+// answers:
+//
+//   the TIME   is a point forecast, and averaging two of them cancels
+//              independent error — the oldest result in forecast combination,
+//              and hard to beat.
+//   the WINDOW is an interval that has to contain the truth, and averaging two
+//              of those is simply wrong. Gaussian 8:00-8:40 and ML 10:30-11:30
+//              averaged at .7/.3 gives 8:45-9:31 — an interval containing
+//              NEITHER arm's belief, which fails whichever one was right. The
+//              blend would then be punished on window coverage precisely on the
+//              nights where blending is doing work.
+//
+// So the window is read off the MIXTURE distribution: stack the two beliefs
+// with the gate's weights, and take the 25th and 75th percentiles of the
+// result. That widens honestly when the arms disagree and collapses back to the
+// parents' own window when they agree — with no new fitted parameter, which is
+// what keeps the rule frozen.
+//
+// Each arm is reconstructed from the only thing it publishes: (p25, median,
+// p75), read as a piecewise-linear CDF. Treating the published window as the
+// middle 50% is the same assumption `scoreboard()` already makes when it scores
+// windowCoverage, so the blend and its grader agree about what a window means.
+// ---------------------------------------------------------------------------
+
+interface CdfPoint {
+  x: number;
+  f: number;
+}
+
+// Tails are mirrored outward from the adjacent inner quartile width. The
+// alternative — treating the p25..p75 box as the entire support — would make
+// every arm's distribution artificially compact and the mixture's percentiles
+// too narrow, reintroducing a milder version of the bug this replaces.
+function beliefCdf(early: number, point: number, late: number): CdfPoint[] {
+  const p = Math.min(Math.max(point, early), late); // published triples are ordered; do not trust it
+  const lo = Math.max(p - early, 1);
+  const hi = Math.max(late - p, 1);
+  return [
+    { x: early - lo, f: 0 },
+    { x: early, f: 0.25 },
+    { x: p, f: 0.5 },
+    { x: late, f: 0.75 },
+    { x: late + hi, f: 1 },
+  ];
+}
+
+function cdfAt(pts: CdfPoint[], x: number): number {
+  if (x <= pts[0].x) return 0;
+  if (x >= pts[pts.length - 1].x) return 1;
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1];
+    const b = pts[i];
+    if (x <= b.x) return b.x === a.x ? b.f : a.f + ((x - a.x) / (b.x - a.x)) * (b.f - a.f);
+  }
+  return 1;
+}
+
+// Every component is piecewise linear on the union of all breakpoints, so the
+// mixture is linear on each segment between them and inverting it exactly is a
+// scan plus one interpolation — no root finding, no sampling, deterministic.
+export function mixtureQuantile(comps: { w: number; pts: CdfPoint[] }[], target: number): number | null {
+  const total = comps.reduce((s, c) => s + c.w, 0);
+  if (!(total > 0)) return null;
+  const xs = [...new Set(comps.flatMap((c) => c.pts.map((p) => p.x)))].sort((a, b) => a - b);
+  const F = (x: number) => comps.reduce((s, c) => s + (c.w / total) * cdfAt(c.pts, x), 0);
+  let prevX = xs[0];
+  let prevF = F(prevX);
+  if (prevF >= target) return prevX;
+  for (let i = 1; i < xs.length; i++) {
+    const x = xs[i];
+    const f = F(x);
+    if (f >= target) return f === prevF ? x : prevX + ((target - prevF) / (f - prevF)) * (x - prevX);
+    prevX = x;
+    prevF = f;
+  }
+  return xs[xs.length - 1];
+}
+
 export function blendWeights(fallbackLevel: number | null, effectiveN: number | null): { gaussian: number; ml: number; reason: string } {
   if (fallbackLevel == null) return { gaussian: 0, ml: 1, reason: "no gaussian basis" };
   if (fallbackLevel === 0 && (effectiveN ?? 0) >= GATE_EFFECTIVE_N) {
@@ -165,23 +252,68 @@ export async function predictBlend(env: Env, targetDate: string, now: number): P
     return den > 0 ? Math.round(num / den) : null;
   };
 
+  // Probabilities are the one quantity that DOES mix linearly — a weighted
+  // average of two run-out probabilities is itself a run-out probability.
   const probability = (() => {
     const v = mix((r) => (r.probability == null ? null : r.probability * 1000));
     return v == null ? null : v / 1000;
   })();
+
+  // The mixture, over the arms that published a complete (p25, median, p75).
+  // An arm that withheld a window because it thought a run-out unlikely has no
+  // shape to contribute and is left out; the weights renormalise, exactly as
+  // they do for the point estimate.
+  const comps: { w: number; pts: CdfPoint[] }[] = [];
+  for (const [row, weight] of [
+    [g, w.gaussian],
+    [m, w.ml],
+  ] as const) {
+    if (!row || !(weight > 0)) continue;
+    if (row.window_early == null || row.window_late == null || row.predicted_minutes == null) continue;
+    comps.push({ w: weight, pts: beliefCdf(row.window_early, row.predicted_minutes, row.window_late) });
+  }
+  const q = (t: number) => {
+    const v = comps.length ? mixtureQuantile(comps, t) : null;
+    return v == null ? null : Math.round(v);
+  };
+
+  const predictedMinutes = mix((r) => r.predicted_minutes);
+  const mixtureMedian = q(0.5);
   const o: VariantOutcome = {
     variant: "blend",
     probability,
-    predictedMinutes: mix((r) => r.predicted_minutes),
-    windowEarly: mix((r) => r.window_early),
-    windowLate: mix((r) => r.window_late),
+    predictedMinutes,
+    windowEarly: q(0.25),
+    windowLate: q(0.75),
     // Both arms must have been seeded with the same inventory; if they ever
     // disagree the audit in the scoreboard surfaces it rather than this
     // silently preferring one.
     startBikes: m?.start_bikes ?? g?.start_bikes ?? null,
     modelVersion: null,
   };
-  return storePrediction(env, targetDate, now, o, { rule: "frozen-gate-v1", weights: w, fallbackLevel, effectiveN }, null);
+  return storePrediction(
+    env,
+    targetDate,
+    now,
+    o,
+    {
+      rule: "frozen-gate-v2-mixture",
+      weights: w,
+      fallbackLevel,
+      effectiveN,
+      // The alternative point estimate, recorded nightly and graded by nobody.
+      // Where the weighted mean lands between two far-apart arms, the mixture
+      // median instead sits inside whichever arm holds the majority of the
+      // weight — a time one model actually believes. Which is better is an
+      // empirical question this window is too small to settle, so it is stored
+      // rather than chosen, and can be evaluated later on data it did not see.
+      // Same discipline as the gate itself.
+      mixtureMedian,
+      pointRule: "weighted-mean",
+      components: comps.length,
+    },
+    null,
+  );
 }
 
 // ---------------------------------------------------------------------------
