@@ -5,9 +5,31 @@ dist/
 *.log
 .DS_Store
 
-# training artifacts + downloaded open data (GB-scale, rebuildable)
 training/.venv/
-training/data/
-training/out/
 __pycache__/
 *.pyc
+
+# Training inputs and outputs are split by SIZE, not by kind.
+#
+# The GB-scale files stay out: they rebuild from the open-data URLs in
+# opendata.py in ~8 minutes, and the source zips exceed GitHub's 100 MB
+# per-file limit anyway (2024 is 476 MB).
+#
+# The small ones are committed deliberately. docs/training.md is the only
+# durable provenance record for the live artifact, and `npm run parity` — the
+# gate that blocks every activation — needs artifact.json AND golden.json to
+# run at all. A fresh clone must be able to verify the deployed model rather
+# than take it on faith.
+#
+# Note the `dir/*` form rather than `dir/`: git does not descend into an
+# excluded DIRECTORY, so a `!` negation underneath one is never reached.
+training/data/*
+!training/data/stations_2024.tsv
+!training/data/stations_2025.tsv
+!training/data/weather_hourly.csv
+!training/data/weather_raw.json
+
+training/out/*
+!training/out/artifact.json
+!training/out/golden.json
+!training/out/train_report.json

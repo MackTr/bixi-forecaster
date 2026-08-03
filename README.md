@@ -18,16 +18,20 @@ HTTP, so it is the real deployed model rather than a copy that could drift.
 
 ## Status
 
-Shadow mode has **not started**. The service has never been deployed; all work so
-far runs against local miniflare D1.
+**Shadow mode began 2026-08-01.** Deployed, `gbdt-20260730-2e733b58` active, all
+three arms writing nightly at 22:05 America/Toronto. Notifying nobody.
 
 - [x] Worker skeleton, hourly facts, frozen weather, variant-keyed schema
 - [x] `training/` — DuckDB panel, LightGBM, time-blocked CV, learning curve
 - [x] `export.py` + `gbdt.ts` + parity gate — **passing at 5.6e-17**
 - [x] Artifact upload/activation with a verified SHA chain
 - [x] Three arms settled: `gaussian`, `ml`, `blend` — the `glm` arm was cut
-- [ ] Deploy + first live nightly run
-- [ ] 3–4 weeks of shadow mode, then read `/api/v1/compare`
+- [x] Deployed + first live nightly run — first target date 2026-08-01
+- [ ] 40 paired nights, then read `/api/v1/compare` against the pre-registered rule
+
+The first night is not a result. See
+[docs/model.md](docs/model.md#the-decision-rule) for what would count as one, and
+why a scoreboard read after mid-September is close to a prediction of a null.
 
 ## Why it works this way
 
@@ -72,6 +76,7 @@ src/                    Worker — zero runtime dependencies
 training/               OFFLINE ONLY — see training/README.md
 scripts/                parity.ts (the gate), upload-artifact.ts
 docs/model.md           the model, and how it will be judged
+docs/training.md        how the live artifact was trained, and when
 ```
 
 ## Nightly pipeline

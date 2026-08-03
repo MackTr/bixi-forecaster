@@ -10,6 +10,12 @@ exists to produce exactly two files:
 
 Everything under `data/` and `out/` is gitignored and rebuildable from scratch.
 
+This file is the **runbook** for producing an artifact. For the record of the run
+that produced the one currently serving predictions — when it trained, on what
+data, with which package versions, and what it scored — see
+[`docs/training.md`](../docs/training.md). Because `data/` and `out/` are
+gitignored, that document is the only durable provenance record there is.
+
 ## Setup
 
 ```sh

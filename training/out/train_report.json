@@ -1,0 +1,133 @@
+{
+  "rows": 5190555,
+  "folds": {
+    "summer": {
+      "train_end": "2025-08-01",
+      "test_start": "2025-08-01",
+      "test_end": "2025-09-16"
+    },
+    "autumn": {
+      "train_end": "2025-09-16",
+      "test_start": "2025-09-16",
+      "test_end": "2025-11-16"
+    }
+  },
+  "params": {
+    "objective": "poisson",
+    "learning_rate": 0.05,
+    "num_leaves": 63,
+    "min_data_in_leaf": 500,
+    "feature_fraction": 0.9,
+    "bagging_fraction": 0.8,
+    "bagging_freq": 1,
+    "lambda_l2": 1.0,
+    "max_bin": 255,
+    "verbose": -1,
+    "num_threads": 0,
+    "seed": 20260727,
+    "deterministic": true,
+    "boost_from_average": false
+  },
+  "transfer": {
+    "summer": {
+      "n_hours": 690,
+      "n_days": 46,
+      "hourly_deviance": 1.443751425617679,
+      "hourly_deviance_baseline": 1.4978797129557118,
+      "morning_mae": 3.3624763755223865,
+      "morning_mae_baseline": 4.503061849357011,
+      "morning_mean_actual": 16.67391304347826
+    },
+    "autumn": {
+      "n_hours": 915,
+      "n_days": 61,
+      "hourly_deviance": 1.6916952977853523,
+      "hourly_deviance_baseline": 1.5759005053197068,
+      "morning_mae": 4.843654421503985,
+      "morning_mae_baseline": 4.967937045763543,
+      "morning_mean_actual": 14.114754098360656
+    }
+  },
+  "learning_curve": {
+    "summer": {
+      "2025 only": {
+        "n": 582405,
+        "deviance": 1.5355303919050292,
+        "deviance_baseline": 2.036903610069442,
+        "mae": 1.3492116158404803,
+        "mae_baseline": 1.3606956623790798,
+        "trees": 600,
+        "train_rows": 1330395,
+        "secs": 24.1
+      },
+      "2024+2025": {
+        "n": 582405,
+        "deviance": 1.5053278918497184,
+        "deviance_baseline": 1.9394956555126799,
+        "mae": 1.3138394712504977,
+        "mae_baseline": 1.3631346199867052,
+        "trees": 600,
+        "train_rows": 3833625,
+        "secs": 82.2
+      },
+      "gain": 0.019669099494566543
+    },
+    "autumn": {
+      "2025 only": {
+        "n": 774525,
+        "deviance": 1.4399549289128972,
+        "deviance_baseline": 1.667046407017314,
+        "mae": 1.1488408915516377,
+        "mae_baseline": 1.2763932187119509,
+        "trees": 600,
+        "train_rows": 1912800,
+        "secs": 40.0
+      },
+      "2024+2025": {
+        "n": 774525,
+        "deviance": 1.4054445523379941,
+        "deviance_baseline": 1.630316210443565,
+        "mae": 1.1266477884446744,
+        "mae_baseline": 1.256322110505122,
+        "trees": 600,
+        "train_rows": 4416030,
+        "secs": 76.6
+      },
+      "gain": 0.023966289417792334
+    }
+  },
+  "scores": {
+    "summer": {
+      "dep": {
+        "n": 582405,
+        "deviance": 1.5053278918497184,
+        "deviance_baseline": 1.9394956555126799,
+        "mae": 1.3138394712504977,
+        "mae_baseline": 1.3631346199867052
+      },
+      "arr": {
+        "n": 582405,
+        "deviance": 1.4965902701950795,
+        "deviance_baseline": 1.8443384923335597,
+        "mae": 1.3069382196141899,
+        "mae_baseline": 1.3191513474321908
+      }
+    },
+    "autumn": {
+      "dep": {
+        "n": 774525,
+        "deviance": 1.4054445523379941,
+        "deviance_baseline": 1.630316210443565,
+        "mae": 1.1266477884446744,
+        "mae_baseline": 1.256322110505122
+      },
+      "arr": {
+        "n": 774525,
+        "deviance": 1.4156322575539653,
+        "deviance_baseline": 1.6128295749903618,
+        "mae": 1.1240882848398597,
+        "mae_baseline": 1.2430464072414131
+      }
+    }
+  }
+}

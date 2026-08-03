@@ -33,6 +33,10 @@ LightGBM, Poisson objective, 600 trees at `lr=0.05`, trained network-wide across
 2024+2025 (27.5M trips, ~1,280 stations, 5.19M station-hour rows). Two separate
 boosters: departures are censored once a station empties, arrivals are not.
 
+> This section is the *design*. For the run that produced the live artifact —
+> dates, package versions, hyperparameters, held-out scores and reproducibility —
+> see [docs/training.md](training.md).
+
 **Why network-wide.** Station 345 contributes only ~532 station-days. A model
 fitted to those alone is a noisy restatement of the station's own mean, which
 `bixi-predictor` already computes better. Transfer was measured with 345 held out
